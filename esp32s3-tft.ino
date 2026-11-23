@@ -8,7 +8,7 @@
 #include <math.h>
 
 // ============================================================
-// NEXUS | PERSONAL SYSTEM CORE
+// MB.project | PERSONAL DEVICE CORE
 // ESP32-S3 + ST7735 | Wi-Fi service | Firmware OTA | Time module
 //
 // Project identity is intentionally generic. Add future sensors,
@@ -17,7 +17,7 @@
 
 // ------------------------- USER CONFIG ------------------------
 // Keep the display name short (about 6 characters) for the 128 px TFT header.
-const char* DEVICE_NAME = "NEXUS";
+const char* DEVICE_NAME = "MB.project";
 
 const char* WIFI_SSID = "Qwerty1";
 const char* WIFI_PASS = "zxcvbnm123";
@@ -25,7 +25,7 @@ const char* WIFI_PASS = "zxcvbnm123";
 // HTTP Basic Authentication for local firmware maintenance.
 // Change this before using OTA. Do not expose port 80 to the internet.
 const char* OTA_USER = "admin";
-const char* OTA_PASS = "111115";
+const char* OTA_PASS = "11115";
 
 // Indonesia Western Time (WIB, UTC+7)
 const long GMT_OFFSET_SEC = 7L * 3600L;
@@ -103,137 +103,131 @@ const char* consoleHtml = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#080f19">
-  <title>NEXUS | Device Console</title>
+  <meta name="theme-color" content="#07131a">
+  <title>MB.project</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #080f19;
-      --panel: #101b29;
-      --panel-soft: #142234;
-      --line: rgba(200,216,228,.12);
-      --text: #f2f0e9;
-      --muted: #94a6b5;
-      --gold: #dfbd80;
-      --gold-deep: #ad8950;
-      --mint: #78c8ae;
-      --red: #ef8580;
-      --shadow: 0 28px 80px rgba(0,0,0,.42);
+      --night:#07131a; --deep:#0a1c22; --panel:rgba(12,29,35,.88);
+      --line:rgba(174,205,179,.16); --text:#e8eadc; --muted:#91a69e;
+      --moss:#91b58a; --glow:#9bd8bd; --amber:#d7b77b; --danger:#e58c83;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body {
-      margin: 0; min-height: 100vh;
-      padding: max(26px,env(safe-area-inset-top)) 18px max(26px,env(safe-area-inset-bottom));
-      display: grid; place-items: center; color: var(--text);
-      font-family: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    body{
+      margin:0;min-height:100vh;padding:max(28px,env(safe-area-inset-top)) 18px max(28px,env(safe-area-inset-bottom));
+      display:grid;place-items:center;overflow-x:hidden;color:var(--text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
       background:
-        radial-gradient(ellipse at 50% -15%,rgba(196,158,94,.15),transparent 48%),
-        radial-gradient(ellipse at 100% 85%,rgba(67,133,143,.10),transparent 42%),
-        linear-gradient(145deg,#080f19,#0b1420 55%,#080f19);
+        radial-gradient(ellipse at 48% 5%,rgba(113,167,139,.17),transparent 38%),
+        radial-gradient(ellipse at 88% 75%,rgba(49,112,105,.16),transparent 40%),
+        linear-gradient(155deg,#071119 0%,#0b2025 54%,#08151b 100%);
     }
-    .shell { width: min(100%,490px); }
-    .topline { display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 2px 25px; }
-    .brand { display:flex;align-items:center;gap:11px;min-width:0; }
-    .brand-mark {
-      width:38px;height:38px;flex:0 0 38px;border:1px solid rgba(223,189,128,.55);
-      border-radius:12px;display:grid;place-items:center;color:var(--gold);
-      font-family:Georgia,serif;font-size:19px;box-shadow:inset 0 0 0 4px rgba(223,189,128,.06);
+    /* Quiet, layered abyss atmosphere: no external artwork or heavy motion. */
+    body:before,body:after{content:"";position:fixed;pointer-events:none;z-index:-1}
+    body:before{
+      width:115vw;height:75vh;left:-8vw;bottom:-34vh;border-radius:48% 52% 0 0;
+      background:radial-gradient(ellipse at 50% 0%,rgba(112,163,124,.16),transparent 68%);
+      filter:blur(22px);animation:slow-drift 24s ease-in-out infinite alternate;
     }
-    .brand-name { font-size:12px;font-weight:800;letter-spacing:.22em; }
-    .brand-caption { margin-top:3px;color:var(--muted);font-size:9px;letter-spacing:.15em; }
-    .device-state {
-      display:inline-flex;align-items:center;gap:7px;padding:7px 10px;
-      border:1px solid rgba(120,200,174,.2);border-radius:99px;
-      color:var(--mint);background:rgba(120,200,174,.07);
-      font-size:9px;font-weight:800;letter-spacing:.1em;white-space:nowrap;
+    body:after{
+      inset:0;opacity:.32;
+      background-image:radial-gradient(1px 1px at 12% 22%,#d5e6c8 98%,transparent),
+        radial-gradient(1px 1px at 79% 17%,#d5e6c8 98%,transparent),
+        radial-gradient(1.5px 1.5px at 68% 62%,#b8dfc9 98%,transparent),
+        radial-gradient(1px 1px at 25% 76%,#d5e6c8 98%,transparent),
+        radial-gradient(1px 1px at 91% 83%,#d5e6c8 98%,transparent);
+      animation:soft-glimmer 9s ease-in-out infinite alternate;
     }
-    .state-dot { width:6px;height:6px;border-radius:50%;background:var(--mint); }
-    .intro { margin:0 2px 22px; }
-    .eyebrow { color:var(--gold);font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase; }
-    h1 { margin:9px 0 9px;font-family:Georgia,"Times New Roman",serif;font-size:clamp(32px,8vw,41px);line-height:1.05;font-weight:500;letter-spacing:-.035em; }
-    .intro p { max-width:420px;margin:0;color:var(--muted);font-size:13px;line-height:1.75; }
-    .system-meta { display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 15px; }
-    .meta-item { min-width:0;padding:12px 11px;border:1px solid var(--line);border-radius:13px;background:rgba(16,27,41,.66); }
-    .meta-label { color:var(--muted);font-size:8px;font-weight:800;letter-spacing:.13em; }
-    .meta-value { margin-top:5px;color:var(--text);font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-    .card {
-      position:relative;overflow:hidden;padding:21px;border:1px solid var(--line);border-radius:21px;
-      background:linear-gradient(155deg,rgba(20,34,52,.96),rgba(13,24,37,.98));box-shadow:var(--shadow);
+    .shell{width:min(100%,470px);position:relative}
+    .brand{display:flex;align-items:center;gap:12px;margin:0 2px 28px}
+    .mark{
+      width:39px;height:39px;display:grid;place-items:center;border-radius:13px;
+      border:1px solid rgba(215,183,123,.42);color:var(--amber);
+      background:linear-gradient(145deg,rgba(215,183,123,.12),rgba(130,174,146,.06));
+      box-shadow:inset 0 0 18px rgba(215,183,123,.07),0 0 24px rgba(113,167,139,.08);
+      font-family:Georgia,serif;font-size:19px;
     }
-    .card::before { content:"";position:absolute;inset:0 18% auto;height:1px;background:linear-gradient(90deg,transparent,rgba(223,189,128,.45),transparent); }
-    .section-head { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px; }
-    .section-title { font-size:11px;font-weight:850;letter-spacing:.1em; }
-    .section-tag { color:var(--gold);font-size:9px;letter-spacing:.12em; }
-    .dropzone {
-      min-height:166px;padding:21px 16px;border:1px dashed rgba(223,189,128,.43);border-radius:15px;
+    .brand-name{font-size:13px;font-weight:750;letter-spacing:.12em}
+    .brand-sub{margin-top:3px;color:var(--muted);font-size:9px;letter-spacing:.19em}
+    .local{margin-left:auto;display:flex;align-items:center;gap:7px;color:#a8cbb4;font-size:9px;letter-spacing:.13em}
+    .local-dot{width:6px;height:6px;border-radius:50%;background:#9bd8bd;box-shadow:0 0 10px rgba(155,216,189,.7)}
+    .heading{margin:0 2px 19px}
+    .eyebrow{color:var(--amber);font-size:9px;font-weight:750;letter-spacing:.22em}
+    h1{margin:8px 0 0;font-family:Georgia,"Times New Roman",serif;font-size:clamp(29px,7vw,36px);font-weight:400;letter-spacing:-.035em}
+    .meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:13px}
+    .meta-item{padding:11px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(10,27,33,.62);backdrop-filter:blur(10px)}
+    .meta-label{color:#81968e;font-size:8px;font-weight:750;letter-spacing:.15em}
+    .meta-value{margin-top:5px;color:#e4e8dc;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .card{
+      position:relative;overflow:hidden;padding:19px;border:1px solid rgba(174,205,179,.19);border-radius:20px;
+      background:linear-gradient(145deg,rgba(17,39,43,.91),rgba(8,24,31,.94));
+      box-shadow:0 25px 75px rgba(0,0,0,.34),inset 0 1px rgba(226,239,211,.045);
+      backdrop-filter:blur(18px);
+    }
+    .card:before{content:"";position:absolute;left:18%;right:18%;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(215,183,123,.6),transparent)}
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+    .section-title{font-size:10px;font-weight:800;letter-spacing:.16em}
+    .section-tag{color:#a9bd9e;font-size:8px;letter-spacing:.14em}
+    .dropzone{
+      min-height:153px;padding:20px 14px;border:1px dashed rgba(155,190,157,.42);border-radius:14px;
       display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-      cursor:pointer;background:rgba(5,12,20,.36);transition:border-color .18s ease,background .18s ease,transform .18s ease;
+      cursor:pointer;background:rgba(3,14,19,.35);transition:border-color .25s,background .25s,transform .25s;
     }
-    .dropzone:hover,.dropzone.dragover { border-color:var(--gold);background:rgba(223,189,128,.07);transform:translateY(-1px); }
-    .upload-icon { width:44px;height:44px;display:grid;place-items:center;margin-bottom:11px;border-radius:13px;color:var(--gold);background:rgba(223,189,128,.1); }
-    .upload-icon svg { width:22px;height:22px; }
-    .drop-title { font-size:13px;font-weight:750; }
-    .drop-hint { margin-top:6px;color:var(--muted);font-size:10px;line-height:1.55; }
-    input[type=file] { position:absolute;width:1px;height:1px;opacity:0;pointer-events:none; }
-    .file-row { display:none;align-items:center;gap:11px;margin-top:12px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(5,12,20,.3); }
-    .file-row.show { display:flex; }
-    .file-symbol { flex:0 0 32px;width:32px;height:35px;display:grid;place-items:center;color:var(--gold);border-radius:8px;background:rgba(223,189,128,.1);font-size:9px;font-weight:850; }
-    .file-info { flex:1;min-width:0; }
-    .file-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700; }
-    .file-size { margin-top:3px;color:var(--muted);font-size:10px; }
-    .file-check { color:var(--mint);font-size:17px; }
-    .button {
-      width:100%;min-height:48px;margin-top:16px;padding:0 18px;border:0;border-radius:12px;
-      color:#17140e;background:linear-gradient(110deg,#e8cb98,#c89e60);
-      font:inherit;font-size:11px;font-weight:900;letter-spacing:.12em;cursor:pointer;
-      box-shadow:0 9px 25px rgba(185,143,79,.17);transition:filter .18s ease,transform .18s ease;
+    .dropzone:hover,.dropzone.dragover{border-color:var(--glow);background:rgba(120,176,145,.08);transform:translateY(-1px)}
+    .upload-icon{width:42px;height:42px;display:grid;place-items:center;margin-bottom:10px;border-radius:13px;color:var(--amber);background:rgba(215,183,123,.10);box-shadow:0 0 25px rgba(155,216,189,.06)}
+    .upload-icon svg{width:21px;height:21px}
+    .drop-title{font-size:12px;font-weight:700}
+    .drop-hint{margin-top:6px;color:var(--muted);font-size:10px;line-height:1.5}
+    input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+    .file-row{display:none;align-items:center;gap:10px;margin-top:11px;padding:10px 11px;border:1px solid var(--line);border-radius:11px;background:rgba(3,14,19,.32)}
+    .file-row.show{display:flex}
+    .file-symbol{width:31px;height:33px;display:grid;place-items:center;border-radius:8px;color:var(--amber);background:rgba(215,183,123,.1);font-size:8px;font-weight:850}
+    .file-info{flex:1;min-width:0}.file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:700}
+    .file-size{margin-top:3px;color:var(--muted);font-size:9px}.file-check{color:var(--glow);font-size:16px}
+    .button{
+      width:100%;min-height:47px;margin-top:15px;padding:0 16px;border:1px solid rgba(227,207,162,.22);border-radius:11px;
+      color:#17231e;background:linear-gradient(110deg,#c9d3b0,#d8bd89);
+      font:inherit;font-size:10px;font-weight:900;letter-spacing:.17em;cursor:pointer;
+      box-shadow:0 8px 24px rgba(112,153,119,.13);transition:filter .2s,transform .2s;
     }
-    .button:hover:not(:disabled) { filter:brightness(1.06);transform:translateY(-1px); }
-    .button:active:not(:disabled) { transform:translateY(1px); }
-    .button:disabled { cursor:not-allowed;opacity:.38;box-shadow:none; }
-    .progress { display:none;margin-top:18px; }
-    .progress.show { display:block; }
-    .progress-head { display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;color:var(--muted);font-size:9px;letter-spacing:.07em; }
-    .progress-value { color:var(--gold);font-weight:850;font-variant-numeric:tabular-nums; }
-    .track { height:6px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.09); }
-    .fill { width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#b58c53,#ead09d);transition:width .15s ease; }
-    .status { min-height:18px;margin-top:13px;color:var(--muted);font-size:10px;line-height:1.6; }
-    .status.ok { color:var(--mint); }
-    .status.err { color:var(--red); }
-    .notice { display:flex;gap:9px;align-items:flex-start;margin:14px 3px 0;color:#788b9b;font-size:10px;line-height:1.65; }
-    .notice svg { flex:0 0 14px;width:14px;height:14px;margin-top:1px;color:var(--gold-deep); }
-    .footer { margin-top:22px;text-align:center;color:#607181;font-size:9px;letter-spacing:.16em; }
-    @media(max-width:380px) { .card{padding:16px}.system-meta{gap:6px}.meta-item{padding:10px 8px}.topline{margin-bottom:20px} }
-    @media(prefers-reduced-motion:reduce) { *,*::before,*::after{transition:none!important} }
+    .button:hover:not(:disabled){filter:brightness(1.06);transform:translateY(-1px)}
+    .button:active:not(:disabled){transform:translateY(1px)}
+    .button:disabled{cursor:not-allowed;opacity:.36;box-shadow:none}
+    .progress{display:none;margin-top:16px}.progress.show{display:block}
+    .progress-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;color:var(--muted);font-size:9px;letter-spacing:.08em}
+    .progress-value{color:var(--amber);font-weight:800;font-variant-numeric:tabular-nums}
+    .track{height:5px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.09)}
+    .fill{width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#88b89a,#d9bd87);transition:width .16s ease}
+    .status{min-height:16px;margin-top:12px;color:var(--muted);font-size:9px;line-height:1.6}
+    .status.ok{color:#a8d9b9}.status.err{color:var(--danger)}
+    .foot{margin:13px 3px 0;color:#71877f;font-size:9px;line-height:1.6}
+    @keyframes slow-drift{from{transform:translate3d(-2%,0,0) scale(1)}to{transform:translate3d(3%,-3%,0) scale(1.08)}}
+    @keyframes soft-glimmer{from{opacity:.2}to{opacity:.42}}
+    @media(max-width:380px){.card{padding:15px}.meta{gap:6px}.meta-item{padding:9px 7px}.brand{margin-bottom:23px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
   </style>
 </head>
 <body>
   <main class="shell">
-    <header class="topline">
-      <div class="brand">
-        <div class="brand-mark">N</div>
-        <div><div class="brand-name">NEXUS</div><div class="brand-caption">PERSONAL SYSTEM PLATFORM</div></div>
-      </div>
-      <div class="device-state"><span class="state-dot"></span>LOCAL DEVICE</div>
+    <header class="brand">
+      <div class="mark">M</div>
+      <div><div class="brand-name">MB.project</div><div class="brand-sub">PERSONAL DEVICE</div></div>
+      <div class="local"><span class="local-dot"></span>LOCAL</div>
     </header>
 
-    <section class="intro">
-      <div class="eyebrow">ESP32-S3 / SYSTEM MAINTENANCE</div>
-      <h1>Device<br>Console.</h1>
-      <p>Pusat pemeliharaan perangkat untuk instalasi firmware dan pengembangan sistem. Antarmuka ini dirancang sebagai fondasi bagi modul-modul yang akan ditambahkan berikutnya.</p>
+    <section class="heading">
+      <div class="eyebrow">ESP32-S3</div>
+      <h1>Firmware</h1>
     </section>
 
-    <section class="system-meta" aria-label="Informasi platform">
-      <div class="meta-item"><div class="meta-label">PLATFORM</div><div class="meta-value">ESP32-S3</div></div>
-      <div class="meta-item"><div class="meta-label">CONNECTION</div><div class="meta-value">Wi-Fi OTA</div></div>
-      <div class="meta-item"><div class="meta-label">PACKAGE</div><div class="meta-value">FIRMWARE .BIN</div></div>
+    <section class="meta" aria-label="Device information">
+      <div class="meta-item"><div class="meta-label">BOARD</div><div class="meta-value">ESP32-S3</div></div>
+      <div class="meta-item"><div class="meta-label">LINK</div><div class="meta-value">WI-FI</div></div>
+      <div class="meta-item"><div class="meta-label">FILE</div><div class="meta-value">.BIN</div></div>
     </section>
 
     <section class="card">
-      <div class="section-head">
-        <div class="section-title">FIRMWARE DEPLOYMENT</div>
-        <div class="section-tag">SYSTEM SERVICE</div>
-      </div>
+      <div class="section-head"><div class="section-title">FIRMWARE UPDATE</div><div class="section-tag">OTA</div></div>
       <form id="otaForm">
         <label class="dropzone" id="dropzone" for="fileInput">
           <span class="upload-icon">
@@ -241,31 +235,24 @@ const char* consoleHtml = R"rawliteral(
               <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 16.5v2A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-2"/>
             </svg>
           </span>
-          <span class="drop-title">Pilih paket firmware</span>
-          <span class="drop-hint">Ketuk untuk membuka Files atau seret berkas .bin ke area ini</span>
+          <span class="drop-title">Pilih firmware</span>
+          <span class="drop-hint">Ketuk untuk memilih file .bin</span>
         </label>
         <input type="file" id="fileInput" name="update" accept=".bin,application/octet-stream">
-
         <div class="file-row" id="fileRow">
           <div class="file-symbol">BIN</div>
           <div class="file-info"><div class="file-name" id="fileName">-</div><div class="file-size" id="fileSize">-</div></div>
           <div class="file-check">â</div>
         </div>
-        <button class="button" id="uploadBtn" type="submit" disabled>INSTALL FIRMWARE</button>
+        <button class="button" id="uploadBtn" type="submit" disabled>INSTALL</button>
       </form>
-
       <div class="progress" id="progressWrap">
-        <div class="progress-head"><span id="progressLabel">SENDING PACKAGE</span><span class="progress-value" id="progressPct">0%</span></div>
+        <div class="progress-head"><span id="progressLabel">UPLOADING</span><span class="progress-value" id="progressPct">0%</span></div>
         <div class="track"><div class="fill" id="progressFill"></div></div>
       </div>
-      <div class="status" id="statusMsg" role="status" aria-live="polite">Menunggu paket firmware.</div>
+      <div class="status" id="statusMsg" role="status" aria-live="polite">Menunggu file.</div>
     </section>
-
-    <div class="notice">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.2c0 4.6 3.2 7.8 7.5 9.8 4.3-2 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v4m0 3h.01"/></svg>
-      <span>Gunakan firmware yang sesuai dengan board dan konfigurasi partisi perangkat. Jangan matikan perangkat atau menutup halaman selama instalasi berlangsung.</span>
-    </div>
-    <div class="footer">NEXUS Â· PERSONAL DEVICE INTERFACE</div>
+    <div class="foot">Pastikan firmware sesuai dengan board. Jangan matikan perangkat selama proses berlangsung.</div>
   </main>
 
   <script>
@@ -293,20 +280,12 @@ const char* consoleHtml = R"rawliteral(
     function selectFile(file) {
       if (!file) return;
       if (!/\.bin$/i.test(file.name)) {
-        selectedFile = null;
-        input.value = '';
-        fileRow.classList.remove('show');
-        uploadBtn.disabled = true;
-        setStatus('Format tidak sesuai. Pilih berkas firmware .bin.', 'err');
-        return;
+        selectedFile = null; input.value = ''; fileRow.classList.remove('show');
+        uploadBtn.disabled = true; setStatus('Pilih file firmware .bin.', 'err'); return;
       }
-      selectedFile = file;
-      fileName.textContent = file.name;
-      fileSize.textContent = formatBytes(file.size);
-      fileRow.classList.add('show');
-      uploadBtn.disabled = false;
-      progressWrap.classList.remove('show');
-      setStatus('Paket firmware siap dipasang.');
+      selectedFile = file; fileName.textContent = file.name; fileSize.textContent = formatBytes(file.size);
+      fileRow.classList.add('show'); uploadBtn.disabled = false; progressWrap.classList.remove('show');
+      setStatus('Firmware siap dipasang.');
     }
     input.addEventListener('change', () => selectFile(input.files[0]));
     ['dragenter','dragover'].forEach(name => dropzone.addEventListener(name, event => {
@@ -316,59 +295,35 @@ const char* consoleHtml = R"rawliteral(
       event.preventDefault(); dropzone.classList.remove('dragover');
     }));
     dropzone.addEventListener('drop', event => {
-      const file = event.dataTransfer.files[0];
-      if (!file) return;
+      const file = event.dataTransfer.files[0]; if (!file) return;
       try { input.files = event.dataTransfer.files; } catch (_) {}
       selectFile(file);
     });
-
     form.addEventListener('submit', event => {
-      event.preventDefault();
-      const file = selectedFile;
+      event.preventDefault(); const file = selectedFile;
       if (!file || !/\.bin$/i.test(file.name)) return;
-
-      const data = new FormData();
-      data.append('update', file, file.name);
+      const data = new FormData(); data.append('update', file, file.name);
       const xhr = new XMLHttpRequest();
-      uploadBtn.disabled = true;
-      progressWrap.classList.add('show');
-      progressFill.style.width = '0%';
-      progressPct.textContent = '0%';
-      progressLabel.textContent = 'SENDING PACKAGE';
-      setStatus('Perangkat sedang menerima firmware. Jangan tutup halaman ini.');
-
+      uploadBtn.disabled = true; progressWrap.classList.add('show');
+      progressFill.style.width = '0%'; progressPct.textContent = '0%';
+      progressLabel.textContent = 'UPLOADING'; setStatus('Jangan tutup halaman selama proses berlangsung.');
       xhr.upload.addEventListener('progress', event => {
         if (!event.lengthComputable) return;
         const percent = Math.min(100, Math.round(event.loaded / event.total * 100));
-        progressFill.style.width = percent + '%';
-        progressPct.textContent = percent + '%';
-        if (percent >= 100) {
-          progressLabel.textContent = 'VERIFYING & INSTALLING';
-          setStatus('Transfer selesai. Perangkat sedang memverifikasi firmware.');
-        }
+        progressFill.style.width = percent + '%'; progressPct.textContent = percent + '%';
+        if (percent >= 100) { progressLabel.textContent = 'INSTALLING'; setStatus('Memasang firmware ke perangkat.'); }
       });
       xhr.addEventListener('load', () => {
         if (xhr.status === 200 && /^OK\b/i.test((xhr.responseText || '').trim())) {
-          progressFill.style.width = '100%';
-          progressPct.textContent = '100%';
-          progressLabel.textContent = 'INSTALLATION COMPLETE';
-          setStatus('Firmware berhasil dipasang. Perangkat akan memulai ulang otomatis.', 'ok');
+          progressFill.style.width = '100%'; progressPct.textContent = '100%';
+          progressLabel.textContent = 'COMPLETE'; setStatus('Berhasil. Perangkat akan memulai ulang.', 'ok');
         } else {
-          setStatus('Instalasi gagal: ' + ((xhr.responseText || 'respons perangkat tidak valid').trim()), 'err');
-          uploadBtn.disabled = false;
+          setStatus('Gagal: ' + ((xhr.responseText || 'respons tidak valid').trim()), 'err'); uploadBtn.disabled = false;
         }
       });
-      xhr.addEventListener('error', () => {
-        setStatus('Koneksi terputus. Periksa Wi-Fi dan kondisi perangkat.', 'err');
-        uploadBtn.disabled = false;
-      });
-      xhr.addEventListener('timeout', () => {
-        setStatus('Waktu koneksi habis. Periksa perangkat sebelum mencoba kembali.', 'err');
-        uploadBtn.disabled = false;
-      });
-      xhr.open('POST', '/update', true);
-      xhr.timeout = 180000;
-      xhr.send(data);
+      xhr.addEventListener('error', () => { setStatus('Koneksi terputus. Periksa Wi-Fi.', 'err'); uploadBtn.disabled = false; });
+      xhr.addEventListener('timeout', () => { setStatus('Waktu koneksi habis. Coba kembali.', 'err'); uploadBtn.disabled = false; });
+      xhr.open('POST', '/update', true); xhr.timeout = 180000; xhr.send(data);
     });
   </script>
 </body>
@@ -390,9 +345,6 @@ void drawStaticScene() {
   faceCanvas.setTextColor(COL_GOLD);
   faceCanvas.setCursor(8, 6);
   faceCanvas.print(DEVICE_NAME);
-  faceCanvas.setTextColor(COL_MUTED);
-  faceCanvas.setCursor(47, 6);
-  faceCanvas.print("/ CORE");
   faceCanvas.drawFastHLine(7, 18, SCREEN_W - 14, COL_GOLD_DIM);
 
   // Bezel and dial
@@ -604,8 +556,7 @@ void drawServiceScreen(const char* title, const char* subtitle, int percent, boo
   tft.setTextSize(1);
   tft.setTextColor(COL_GOLD);
   tft.setCursor(9, 10);
-  tft.print(DEVICE_NAME);
-  tft.print(" / SYSTEM SERVICE");
+  tft.print("MB.project");
   tft.drawFastHLine(8, 23, SCREEN_W - 16, COL_GOLD_DIM);
 
   tft.setTextColor(success ? COL_GREEN : COL_IVORY);
@@ -783,7 +734,7 @@ void setupWebConsole() {
   });
 
   server.begin();
-  Serial.println("NEXUS device console started on port 80.");
+  Serial.println("MB.project device console started on port 80.");
 }
 
 // ============================================================
