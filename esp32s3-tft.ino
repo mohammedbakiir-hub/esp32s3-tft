@@ -8,6 +8,18 @@
 const char* WIFI_SSID = "Qwerty1";
 const char* WIFI_PASS = "zxcvbnm123";
 
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
+#include <SPI.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Update.h>
+#include <time.h>
+#include <math.h>
+
+const char* WIFI_SSID = "NAMA_WIFI";
+const char* WIFI_PASS = "PASSWORD_WIFI";
+
 // Zona waktu Indonesia: WIB = UTC+7
 const long GMT_OFFSET_SEC = 7 * 3600;
 const int  DAYLIGHT_OFFSET_SEC = 0;
@@ -21,23 +33,20 @@ const int  DAYLIGHT_OFFSET_SEC = 0;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 WebServer server(80);
 
-// Layar 128x160
 const int SCREEN_W = 128;
 const int SCREEN_H = 160;
 
-// Geometri jam dinding minimalis (tengah layar)
 const int CLK_CX = 64;
 const int CLK_CY = 82;
 const int CLK_R  = 46;
 
-// Palet minimalis bersih
 const uint16_t COL_BG      = ST77XX_BLACK;
-const uint16_t COL_FACE    = 0x1082; // Abu-biru sangat gelap
-const uint16_t COL_RING    = 0xBDF7; // Lingkaran jam minimalis
-const uint16_t COL_TICK    = 0x7BEF; // Tanda jam/menit
+const uint16_t COL_FACE    = 0x1082;
+const uint16_t COL_RING    = 0xBDF7;
+const uint16_t COL_TICK    = 0x7BEF;
 const uint16_t COL_HOUR_H  = ST77XX_WHITE;
-const uint16_t COL_MIN_H   = 0x07FF; // Cyan lembut
-const uint16_t COL_SEC_H   = 0xF800; // Merah untuk jarum detik muter
+const uint16_t COL_MIN_H   = 0x07FF;
+const uint16_t COL_SEC_H   = 0xF800;
 const uint16_t COL_TEXT    = ST77XX_WHITE;
 const uint16_t COL_MUTED   = 0x8410;
 
@@ -153,7 +162,6 @@ void drawHand(float angleDeg, int length, uint16_t color, bool thick) {
 
   tft.drawLine(CLK_CX, CLK_CY, x2, y2, color);
   if (thick) {
-    // Geser 1 px tegak lurus agar jarum jam & menit tegas
     float perp = rad + (PI / 2.0f);
     int ox = (int)round(cosf(perp));
     int oy = (int)round(sinf(perp));
@@ -164,7 +172,6 @@ void drawHand(float angleDeg, int length, uint16_t color, bool thick) {
 void drawClockDial() {
   tft.fillScreen(COL_BG);
 
-  // Header IP minimalis di bagian paling atas
   tft.setTextSize(1);
   tft.setTextColor(COL_MUTED);
   tft.setCursor(6, 4);
@@ -174,12 +181,10 @@ void drawClockDial() {
     tft.print("OFFLINE");
   }
 
-  // Badan jam dinding bulat
   tft.fillCircle(CLK_CX, CLK_CY, CLK_R, COL_FACE);
   tft.drawCircle(CLK_CX, CLK_CY, CLK_R, COL_RING);
   tft.drawCircle(CLK_CX, CLK_CY, CLK_R - 1, COL_RING);
 
-  // 12 tanda jam (12, 3, 6, 9 lebih panjang)
   for (int h = 0; h < 12; h++) {
     float rad = (h * 30.0f - 90.0f) * (PI / 180.0f);
     int outerR = CLK_R - 3;
@@ -201,12 +206,10 @@ void renderHands(int hour12, int minute, int second, bool forceRedraw) {
   float minAngle  = (minute + second / 60.0f) * 6.0f;
   float hourAngle = (hour12 + minute / 60.0f) * 30.0f;
 
-  // Hapus jarum detik lama
   if (prevSec >= 0 && (forceRedraw || second != prevSec)) {
     drawHand(prevSec * 6.0f, CLK_R - 7, COL_FACE, false);
   }
 
-  // Jika menit atau jam berubah, hapus & gambar ulang jarum menit & jam
   if (forceRedraw || minute != prevMin || hour12 != prevHour) {
     if (prevMin >= 0) {
       float pMinAng = (prevMin + (prevSec >= 0 ? prevSec : 0) / 60.0f) * 6.0f;
@@ -217,7 +220,6 @@ void renderHands(int hour12, int minute, int second, bool forceRedraw) {
       drawHand(pHrAng, CLK_R - 22, COL_FACE, true);
     }
 
-    // Gambar ulang tanda jam agar tidak terpotong bekas jarum
     for (int h = 0; h < 12; h++) {
       float rad = (h * 30.0f - 90.0f) * (PI / 180.0f);
       int outerR = CLK_R - 3;
@@ -232,29 +234,32 @@ void renderHands(int hour12, int minute, int second, bool forceRedraw) {
     }
   }
 
-  // Gambar jarum jam, menit, lalu detik yang muter tiap detik
   drawHand(hourAngle, CLK_R - 22, COL_HOUR_H, true);
   drawHand(minAngle,  CLK_R - 12, COL_MIN_H,  true);
   drawHand(secAngle,  CLK_R - 7,  COL_SEC_H,  false);
 
-  // Poros tengah di atas semua jarum
   tft.fillCircle(CLK_CX, CLK_CY, 3, COL_TEXT);
   tft.fillCircle(CLK_CX, CLK_CY, 1, COL_SEC_H);
 }
 
-void renderFooter(const struct tm& t) {
-  if (t.tm_mday != prevDay || t.tm_min != prevMin || t.tm_sec != prevSec) {
-    tft.fillRect(0, 132, SCREEN_W, 28, COL_BG);
-
-    char timeStr[16];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d WIB", t.tm_hour, t.tm_min, t.tm_sec);
+void renderFooter(const struct tm& t, bool forceRedraw) {
+  // Update teks jam (HH:MM WIB) hanya saat jam atau menit berubah (tanpa detik)
+  if (forceRedraw || t.tm_hour != prevHour || t.tm_min != prevMin) {
+    tft.fillRect(20, 134, 88, 10, COL_BG);
+    char timeStr[12];
+    snprintf(timeStr, sizeof(timeStr), "%02d:%02d WIB", t.tm_hour, t.tm_min);
     tft.setTextSize(1);
     tft.setTextColor(COL_TEXT);
-    tft.setCursor(22, 135);
+    tft.setCursor(34, 135);
     tft.print(timeStr);
+  }
 
-    char dateStr[20];
+  // Update tanggal hanya saat hari berganti atau saat draw awal
+  if (forceRedraw || t.tm_mday != prevDay) {
+    tft.fillRect(20, 146, 88, 10, COL_BG);
+    char dateStr[16];
     snprintf(dateStr, sizeof(dateStr), "%02d/%02d/%04d", t.tm_mday, t.tm_mon + 1, t.tm_year + 1900);
+    tft.setTextSize(1);
     tft.setTextColor(COL_MUTED);
     tft.setCursor(34, 147);
     tft.print(dateStr);
@@ -279,7 +284,7 @@ void setup() {
   if (getLocalTime(&timeinfo)) {
     int h12 = timeinfo.tm_hour % 12;
     renderHands(h12, timeinfo.tm_min, timeinfo.tm_sec, true);
-    renderFooter(timeinfo);
+    renderFooter(timeinfo, true);
     prevHour = h12;
     prevMin = timeinfo.tm_min;
     prevSec = timeinfo.tm_sec;
@@ -310,7 +315,7 @@ void loop() {
       int h12 = timeinfo.tm_hour % 12;
       if (timeinfo.tm_sec != prevSec || timeinfo.tm_min != prevMin || h12 != prevHour) {
         renderHands(h12, timeinfo.tm_min, timeinfo.tm_sec, false);
-        renderFooter(timeinfo);
+        renderFooter(timeinfo, false);
         prevHour = h12;
         prevMin = timeinfo.tm_min;
         prevSec = timeinfo.tm_sec;
