@@ -10,20 +10,15 @@
 // ============================================================
 // MB.project | PERSONAL DEVICE CORE
 // ESP32-S3 + ST7735 | Wi-Fi service | Firmware OTA | Time module
-//
-// Project identity is intentionally generic. Add future sensors,
-// actuators, control pages, and other modules in their own sections.
 // ============================================================
 
 // ------------------------- USER CONFIG ------------------------
-// Keep the display name short (about 6 characters) for the 128 px TFT header.
 const char* DEVICE_NAME = "MB.project";
 
 const char* WIFI_SSID = "Qwerty1";
 const char* WIFI_PASS = "zxcvbnm123";
 
 // HTTP Basic Authentication for local firmware maintenance.
-// Change this before using OTA. Do not expose port 80 to the internet.
 const char* OTA_USER = "admin";
 const char* OTA_PASS = "11115";
 
@@ -48,8 +43,6 @@ constexpr int CLK_CX = 64;
 constexpr int CLK_CY = 74;
 constexpr int CLK_R  = 45;
 
-// A 16-bit canvas stores the still background. Only old hand pixels
-// are restored from it, so the face never needs to be redrawn per tick.
 GFXcanvas16 faceCanvas(SCREEN_W, SCREEN_H);
 
 // ------------------------- COLOR SYSTEM -----------------------
@@ -67,7 +60,6 @@ const uint16_t COL_IVORY     = rgb565(239, 239, 229);
 const uint16_t COL_MUTED     = rgb565(125, 146, 160);
 const uint16_t COL_CORAL     = rgb565(222, 104, 99);
 const uint16_t COL_GREEN     = rgb565(99, 195, 147);
-const uint16_t COL_RED       = rgb565(222, 104, 99);
 
 // -------------------------- RUNTIME ---------------------------
 int prevSec = -1;
@@ -87,6 +79,7 @@ bool lastWifiConnected = false;
 unsigned long lastTickMs = 0;
 unsigned long lastNtpAttemptMs = 0;
 
+bool otaAuthPassed = false;
 bool otaUploadStarted = false;
 bool otaUploadFinished = false;
 bool otaUploadFailed = false;
@@ -94,8 +87,6 @@ bool serviceScreenActive = false;
 
 // ============================================================
 // WEB CONSOLE
-// General device maintenance UI - not tied to the clock module.
-// Add new dashboard sections/routes here as the platform grows.
 // ============================================================
 const char* consoleHtml = R"rawliteral(
 <!DOCTYPE html>
@@ -122,7 +113,6 @@ const char* consoleHtml = R"rawliteral(
         radial-gradient(ellipse at 88% 75%,rgba(49,112,105,.16),transparent 40%),
         linear-gradient(155deg,#071119 0%,#0b2025 54%,#08151b 100%);
     }
-    /* Quiet, layered abyss atmosphere: no external artwork or heavy motion. */
     body:before,body:after{content:"";position:fixed;pointer-events:none;z-index:-1}
     body:before{
       width:115vw;height:75vh;left:-8vw;bottom:-34vh;border-radius:48% 52% 0 0;
@@ -242,7 +232,7 @@ const char* consoleHtml = R"rawliteral(
         <div class="file-row" id="fileRow">
           <div class="file-symbol">BIN</div>
           <div class="file-info"><div class="file-name" id="fileName">-</div><div class="file-size" id="fileSize">-</div></div>
-          <div class="file-check">â</div>
+          <div class="file-check">&#10003;</div>
         </div>
         <button class="button" id="uploadBtn" type="submit" disabled>INSTALL</button>
       </form>
@@ -333,28 +323,22 @@ const char* consoleHtml = R"rawliteral(
 // ============================================================
 // DISPLAY MODULE
 // ============================================================
-
-// Draws the still clock face into the canvas. This function is called
-// only when the interface is first shown or restored after OTA service.
 void drawStaticScene() {
   faceCanvas.fillScreen(COL_BG);
   faceCanvas.setTextWrap(false);
 
-  // Header identity
   faceCanvas.setTextSize(1);
   faceCanvas.setTextColor(COL_GOLD);
   faceCanvas.setCursor(8, 6);
   faceCanvas.print(DEVICE_NAME);
   faceCanvas.drawFastHLine(7, 18, SCREEN_W - 14, COL_GOLD_DIM);
 
-  // Bezel and dial
   faceCanvas.fillCircle(CLK_CX, CLK_CY, CLK_R + 1, COL_GOLD_DIM);
   faceCanvas.fillCircle(CLK_CX, CLK_CY, CLK_R, COL_FACE);
   faceCanvas.drawCircle(CLK_CX, CLK_CY, CLK_R - 1, COL_GOLD);
   faceCanvas.drawCircle(CLK_CX, CLK_CY, CLK_R - 3, COL_FACE_HI);
   faceCanvas.drawCircle(CLK_CX, CLK_CY, 25, COL_GOLD_DIM);
 
-  // 60 fixed minute markers. No part of this dial is animated.
   for (int i = 0; i < 60; ++i) {
     const float rad = (i * 6.0f - 90.0f) * (PI / 180.0f);
     const bool major = (i % 5 == 0);
@@ -367,7 +351,6 @@ void drawStaticScene() {
     faceCanvas.drawLine(x1, y1, x2, y2, major ? COL_GOLD : COL_TICK);
   }
 
-  // Cardinal numerals
   faceCanvas.setTextSize(1);
   faceCanvas.setTextColor(COL_GOLD);
   faceCanvas.setCursor(58, 43); faceCanvas.print("12");
@@ -375,7 +358,6 @@ void drawStaticScene() {
   faceCanvas.setCursor(61, 99); faceCanvas.print("6");
   faceCanvas.setCursor(31, 70); faceCanvas.print("9");
 
-  // Footer divider is part of the still background.
   faceCanvas.drawFastHLine(18, 126, SCREEN_W - 36, COL_GOLD_DIM);
 }
 
@@ -384,8 +366,6 @@ void presentStaticScene() {
 }
 
 void drawNetworkStatus() {
-  // This small status field is independent of the dial and only changes
-  // when Wi-Fi connectivity changes.
   tft.fillRect(91, 3, 34, 13, COL_BG);
   const bool connected = WiFi.status() == WL_CONNECTED;
   tft.fillCircle(95, 9, 2, connected ? COL_GREEN : COL_MUTED);
@@ -396,9 +376,6 @@ void drawNetworkStatus() {
   tft.print(connected ? "NET" : "OFF");
 }
 
-// Draw or restore a hand using the same integer raster path. In restore
-// mode, each old hand pixel is replaced by the corresponding pixel from
-// the static canvas, preserving the dial under it without a full redraw.
 void plotHand(float angleDeg, int length, uint16_t color, uint8_t thickness, bool restore) {
   const float rad = (angleDeg - 90.0f) * (PI / 180.0f);
   const int xEnd = CLK_CX + (int)lroundf(cosf(rad) * length);
@@ -449,7 +426,6 @@ void renderHands(int hour24, int minute, int second) {
   const float secondAngle = second * 6.0f;
 
   if (handsDrawn) {
-    // Restore only the former hand strokes. The face and its markers remain still.
     plotHand(prevHourAngle,   CLK_R - 23, COL_GOLD,  3, true);
     plotHand(prevMinuteAngle, CLK_R - 14, COL_IVORY, 3, true);
     plotHand(prevSecondAngle, CLK_R - 7,  COL_CORAL, 1, true);
@@ -547,7 +523,7 @@ void restoreMainDisplay() {
 }
 
 // ============================================================
-// SERVICE DISPLAY (shown only during OTA maintenance)
+// SERVICE DISPLAY (called only at state transitions, not per chunk)
 // ============================================================
 void drawServiceScreen(const char* title, const char* subtitle, int percent, bool success = false) {
   serviceScreenActive = true;
@@ -556,7 +532,7 @@ void drawServiceScreen(const char* title, const char* subtitle, int percent, boo
   tft.setTextSize(1);
   tft.setTextColor(COL_GOLD);
   tft.setCursor(9, 10);
-  tft.print("MB.project");
+  tft.print(DEVICE_NAME);
   tft.drawFastHLine(8, 23, SCREEN_W - 16, COL_GOLD_DIM);
 
   tft.setTextColor(success ? COL_GREEN : COL_IVORY);
@@ -574,11 +550,11 @@ void drawServiceScreen(const char* title, const char* subtitle, int percent, boo
     snprintf(value, sizeof(value), "%d%%", constrain(percent, 0, 100));
     tft.print(value);
   } else {
-    tft.print("RUN");
+    tft.print("OTA");
   }
 
   tft.drawRoundRect(10, 113, 108, 10, 3, COL_GOLD_DIM);
-  const int fillWidth = (percent < 0) ? 48 : constrain((104 * percent) / 100, 0, 104);
+  const int fillWidth = (percent < 0) ? 68 : constrain((104 * percent) / 100, 0, 104);
   if (fillWidth > 0) {
     tft.fillRoundRect(12, 115, fillWidth, 6, 2, success ? COL_GREEN : COL_GOLD);
   }
@@ -596,6 +572,7 @@ void connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   Serial.print("Connecting to Wi-Fi");
@@ -637,12 +614,20 @@ void syncNTPTime() {
 
 // ============================================================
 // WEB SERVICE / OTA
-// Add future HTTP routes in this function, grouped by module.
 // ============================================================
 bool requireOtaAuth() {
   if (server.authenticate(OTA_USER, OTA_PASS)) return true;
   server.requestAuthentication();
   return false;
+}
+
+void resetOtaState() {
+  if (Update.isRunning()) {
+    Update.abort();
+  }
+  otaUploadStarted = false;
+  otaUploadFinished = false;
+  otaUploadFailed = false;
 }
 
 void setupWebConsole() {
@@ -657,79 +642,86 @@ void setupWebConsole() {
 
     const bool success = otaUploadFinished && !otaUploadFailed && !Update.hasError();
     server.sendHeader("Connection", "close");
-    server.send( success ? 200 : 500,
-                 "text/plain",
-                 success ? "OK" : "FAIL: firmware installation failed" );
+    server.send(success ? 200 : 500,
+                "text/plain",
+                success ? "OK" : "FAIL: firmware installation failed");
 
     if (success) {
-      drawServiceScreen("UPDATE COMPLETE", "Firmware installed successfully", 100, true);
-      delay(700);
+      drawServiceScreen("UPDATE COMPLETE", "Firmware installed", 100, true);
+      delay(600);
       ESP.restart();
     } else {
-      drawServiceScreen("UPDATE FAILED", "Check firmware and try again", 0, false);
-      otaUploadStarted = false;
+      drawServiceScreen("UPDATE FAILED", "Try uploading .ino.bin again", 0, false);
+      resetOtaState();
+      delay(1500);
+      restoreMainDisplay();
     }
   }, []() {
-    if (!requireOtaAuth()) return;
-
     HTTPUpload& upload = server.upload();
 
     if (upload.status == UPLOAD_FILE_START) {
-      otaUploadStarted = false;
-      otaUploadFinished = false;
-      otaUploadFailed = false;
+      if (!server.authenticate(OTA_USER, OTA_PASS)) {
+        otaAuthPassed = false;
+        otaUploadFailed = true;
+        return;
+      }
+      otaAuthPassed = true;
+      resetOtaState();
 
       String filename = upload.filename;
       filename.toLowerCase();
       if (!filename.endsWith(".bin")) {
         otaUploadFailed = true;
         Serial.println("OTA rejected: file extension is not .bin");
-        drawServiceScreen("INVALID PACKAGE", "Select a .bin firmware file", 0, false);
+        drawServiceScreen("INVALID FILE", "Select a .bin firmware file", 0, false);
         return;
       }
 
-      Serial.printf("OTA start: %s\n", upload.filename.c_str());
-      drawServiceScreen("PREPARING UPDATE", "Opening firmware partition...", -1, false);
+      const size_t updateSize = (upload.totalSize > 0) ? upload.totalSize : UPDATE_SIZE_UNKNOWN;
+      Serial.printf("OTA start: %s (%u bytes)\n", upload.filename.c_str(), (unsigned)upload.totalSize);
+      drawServiceScreen("UPLOADING OTA", "Writing to flash partition...", -1, false);
 
-      if (Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      if (Update.begin(updateSize, U_FLASH)) {
         otaUploadStarted = true;
       } else {
         otaUploadFailed = true;
         Update.printError(Serial);
-        drawServiceScreen("UPDATE ERROR", "Cannot open firmware partition", 0, false);
+        drawServiceScreen("BEGIN FAILED", "Partition open error", 0, false);
       }
     }
     else if (upload.status == UPLOAD_FILE_WRITE) {
-      if (!otaUploadStarted || otaUploadFailed) return;
+      if (!otaAuthPassed || !otaUploadStarted || otaUploadFailed) return;
 
       const size_t written = Update.write(upload.buf, upload.currentSize);
       if (written != upload.currentSize) {
         otaUploadFailed = true;
         Update.printError(Serial);
-        drawServiceScreen("WRITE ERROR", "Firmware could not be written", 0, false);
-      } else {
-        drawServiceScreen("INSTALLING", "Writing firmware to flash...", -1, false);
+        Update.abort();
+        drawServiceScreen("WRITE FAILED", "Flash write error", 0, false);
       }
     }
     else if (upload.status == UPLOAD_FILE_END) {
+      if (!otaAuthPassed) return;
+
       if (otaUploadStarted && !otaUploadFailed && Update.end(true)) {
         otaUploadFinished = true;
-        Serial.printf("OTA success: %u bytes\n", upload.totalSize);
-        drawServiceScreen("VERIFYING", "Firmware image accepted", 100, true);
+        Serial.printf("OTA success: %u bytes\n", (unsigned)upload.totalSize);
+        drawServiceScreen("VERIFYING", "Firmware image valid", 100, true);
       } else {
         otaUploadFailed = true;
         otaUploadFinished = false;
         Update.printError(Serial);
-        drawServiceScreen("UPDATE FAILED", "Firmware verification failed", 0, false);
+        if (Update.isRunning()) Update.abort();
+        drawServiceScreen("VERIFY FAILED", "Invalid or incomplete .bin", 0, false);
       }
     }
     else if (upload.status == UPLOAD_FILE_ABORTED) {
       otaUploadFailed = true;
       otaUploadFinished = false;
-      if (otaUploadStarted) Update.end();
+      if (Update.isRunning()) Update.abort();
       otaUploadStarted = false;
       Serial.println("OTA upload aborted.");
-      drawServiceScreen("UPLOAD ABORTED", "No firmware was installed", 0, false);
+      drawServiceScreen("UPLOAD ABORTED", "No firmware installed", 0, false);
     }
   });
 
@@ -759,9 +751,8 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  // Keep OTA/service feedback stable; do not draw clock hands over it.
   if (serviceScreenActive) {
-    delay(5);
+    delay(10);
     return;
   }
 
@@ -804,5 +795,5 @@ void loop() {
     }
   }
 
-  delay(5);
+  delay(20);
 }
