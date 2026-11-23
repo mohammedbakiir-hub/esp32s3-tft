@@ -47,26 +47,302 @@ bool timeSynced = false;
 
 const char* otaPageHtml = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32-S3 Web OTA</title>
+  <title>ESP32-S3 OTA Studio</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; padding: 20px; }
-    .box { max-width: 420px; margin: auto; background: #1d1d1d; padding: 20px; border-radius: 10px; }
-    input[type=file] { width: 100%; margin: 14px 0; }
-    button { width: 100%; padding: 12px; background: #00b894; color: #000; font-weight: bold; border: none; border-radius: 6px; }
+    :root {
+      --bg: #0b0f17;
+      --card: #121927;
+      --card-2: #182234;
+      --border: rgba(148, 163, 184, 0.16);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-2: #2dd4bf;
+      --ok: #22c55e;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.14), transparent 45%),
+        radial-gradient(circle at 85% 15%, rgba(45, 212, 191, 0.12), transparent 45%),
+        var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .panel {
+      width: 100%;
+      max-width: 460px;
+      background: linear-gradient(180deg, rgba(24, 34, 52, 0.92), rgba(15, 23, 42, 0.96));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(12px);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-2);
+      background: rgba(45, 212, 191, 0.1);
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      padding: 6px 12px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 10px var(--accent-2);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      margin: 0 0 20px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .dropzone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      min-height: 148px;
+      padding: 20px;
+      border-radius: 16px;
+      border: 1.5px dashed rgba(56, 189, 248, 0.42);
+      background: rgba(11, 15, 23, 0.55);
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+    .dropzone:active {
+      transform: scale(0.99);
+      border-color: var(--accent-2);
+      background: rgba(56, 189, 248, 0.08);
+    }
+    .drop-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+    .drop-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .drop-hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .file-pill {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .file-pill.show { display: flex; }
+    .file-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    input[type="file"] { display: none; }
+    .btn {
+      margin-top: 18px;
+      width: 100%;
+      height: 50px;
+      border: none;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #061018;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(56, 189, 248, 0.22);
+      transition: opacity 0.2s ease, transform 0.12s ease;
+    }
+    .btn:active:not(:disabled) { transform: scale(0.985); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+    .progress-wrap {
+      display: none;
+      margin-top: 18px;
+    }
+    .progress-wrap.show { display: block; }
+    .progress-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.16);
+      overflow: hidden;
+    }
+    .fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 0.15s ease;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 13px;
+      min-height: 18px;
+      color: var(--muted);
+    }
+    .status.ok { color: var(--ok); font-weight: 600; }
+    .status.err { color: var(--err); font-weight: 600; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>ESP32-S3 Web OTA</h2>
-    <p>Pilih file <b>.ino.bin</b> hasil build GitHub Actions:</p>
-    <form method="POST" action="/update" enctype="multipart/form-data">
-      <input type="file" name="update" accept=".bin" required>
-      <button type="submit">Upload Firmware</button>
+  <div class="panel">
+    <div class="badge"><span class="dot"></span>ESP32-S3 WIRELESS OTA</div>
+    <h1>Firmware Updater</h1>
+    <p class="sub">Pilih file <b>esp32s3-tft.ino.bin</b> hasil build GitHub Actions untuk update tanpa kabel.</p>
+
+    <form id="otaForm">
+      <label class="dropzone" for="fileInput">
+        <div class="drop-icon">+</div>
+        <div class="drop-title">Tap untuk pilih file .ino.bin</div>
+        <div class="drop-hint">Ambil dari folder hasil ekstrak di Files iPad</div>
+      </label>
+      <input type="file" id="fileInput" name="update" accept=".bin" required>
+
+      <div class="file-pill" id="filePill">
+        <span id="fileName">-</span>
+        <span class="file-meta" id="fileSize">0 KB</span>
+      </div>
+
+      <button class="btn" type="submit" id="uploadBtn" disabled>Upload Firmware</button>
     </form>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-top">
+        <span id="progressLabel">Mengirim firmware...</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="track"><div class="fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="status" id="statusMsg"></div>
   </div>
+
+  <script>
+    const input = document.getElementById("fileInput");
+    const pill = document.getElementById("filePill");
+    const fileName = document.getElementById("fileName");
+    const fileSize = document.getElementById("fileSize");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const form = document.getElementById("otaForm");
+    const progressWrap = document.getElementById("progressWrap");
+    const progressFill = document.getElementById("progressFill");
+    const progressPct = document.getElementById("progressPct");
+    const progressLabel = document.getElementById("progressLabel");
+    const statusMsg = document.getElementById("statusMsg");
+
+    input.addEventListener("change", () => {
+      const f = input.files[0];
+      if (!f) {
+        pill.classList.remove("show");
+        uploadBtn.disabled = true;
+        return;
+      }
+      fileName.textContent = f.name;
+      fileSize.textContent = (f.size / 1024).toFixed(1) + " KB";
+      pill.classList.add("show");
+      uploadBtn.disabled = false;
+      statusMsg.className = "status";
+      statusMsg.textContent = "";
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const f = input.files[0];
+      if (!f) return;
+
+      const data = new FormData();
+      data.append("update", f, f.name);
+
+      const xhr = new XMLHttpRequest();
+      uploadBtn.disabled = true;
+      progressWrap.classList.add("show");
+      progressFill.style.width = "0%";
+      progressPct.textContent = "0%";
+      progressLabel.textContent = "Mengirim firmware...";
+      statusMsg.className = "status";
+      statusMsg.textContent = "Jangan tutup halaman ini selama proses upload.";
+
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (ev.lengthComputable) {
+          const pct = Math.round((ev.loaded / ev.total) * 100);
+          progressFill.style.width = pct + "%";
+          progressPct.textContent = pct + "%";
+          if (pct >= 100) {
+            progressLabel.textContent = "Memasang ke memori ESP32-S3...";
+          }
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 200 && xhr.responseText.indexOf("OK") !== -1) {
+          progressFill.style.width = "100%";
+          progressPct.textContent = "100%";
+          progressLabel.textContent = "Selesai";
+          statusMsg.className = "status ok";
+          statusMsg.textContent = "Upload berhasil! ESP32-S3 sedang reboot otomatis...";
+        } else {
+          statusMsg.className = "status err";
+          statusMsg.textContent = "Upload gagal: " + (xhr.responseText || "respon tidak valid");
+          uploadBtn.disabled = false;
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        statusMsg.className = "status err";
+        statusMsg.textContent = "Koneksi terputus saat upload. Cek Wi-Fi & coba lagi.";
+        uploadBtn.disabled = false;
+      });
+
+      xhr.open("POST", "/update", true);
+      xhr.send(data);
+    });
+  </script>
 </body>
 </html>
 )rawliteral";
