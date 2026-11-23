@@ -8,18 +8,6 @@
 const char* WIFI_SSID = "Qwerty1";
 const char* WIFI_PASS = "zxcvbnm123";
 
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7735.h>
-#include <SPI.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <Update.h>
-#include <time.h>
-#include <math.h>
-
-const char* WIFI_SSID = "NAMA_WIFI";
-const char* WIFI_PASS = "PASSWORD_WIFI";
-
 // Zona waktu Indonesia: WIB = UTC+7
 const long GMT_OFFSET_SEC = 7 * 3600;
 const int  DAYLIGHT_OFFSET_SEC = 0;
