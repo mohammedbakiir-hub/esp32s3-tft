@@ -6,9 +6,9 @@
 #include <Update.h>
 
 const char* WIFI_SSID = "Qwerty1";
-const char* WIFI_PASS = "zxcvbnm123";
+const char* WIFI_PASS = "zxcvbnm123";#include <Adafruit_GFX.h>
 
-// Zona waktu Indonesia: WIB = UTC+7 (7 * 3600 detik)
+// Zona waktu Indonesia: WIB = UTC+7
 const long GMT_OFFSET_SEC = 7 * 3600;
 const int  DAYLIGHT_OFFSET_SEC = 0;
 
@@ -21,21 +21,30 @@ const int  DAYLIGHT_OFFSET_SEC = 0;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 WebServer server(80);
 
+// Layar 128x160
 const int SCREEN_W = 128;
 const int SCREEN_H = 160;
-const int TOP_BAR_H = 22;
 
-const uint16_t COL_BG      = 0x0843; // Biru gelap lembut
-const uint16_t COL_CARD    = 0x10A5; // Panel jam gelap
-const uint16_t COL_ACCENT  = 0x07FF; // Cyan lembut
-const uint16_t COL_TIME    = ST77XX_WHITE;
-const uint16_t COL_SEC     = 0xFFE0; // Kuning lembut untuk detik
-const uint16_t COL_MUTED   = 0xBDF7; // Abu terang
+// Geometri jam dinding minimalis (tengah layar)
+const int CLK_CX = 64;
+const int CLK_CY = 82;
+const int CLK_R  = 46;
 
-int lastSec = -1;
-int lastMin = -1;
-int lastHour = -1;
-int lastDay = -1;
+// Palet minimalis bersih
+const uint16_t COL_BG      = ST77XX_BLACK;
+const uint16_t COL_FACE    = 0x1082; // Abu-biru sangat gelap
+const uint16_t COL_RING    = 0xBDF7; // Lingkaran jam minimalis
+const uint16_t COL_TICK    = 0x7BEF; // Tanda jam/menit
+const uint16_t COL_HOUR_H  = ST77XX_WHITE;
+const uint16_t COL_MIN_H   = 0x07FF; // Cyan lembut
+const uint16_t COL_SEC_H   = 0xF800; // Merah untuk jarum detik muter
+const uint16_t COL_TEXT    = ST77XX_WHITE;
+const uint16_t COL_MUTED   = 0x8410;
+
+int prevSec = -1;
+int prevMin = -1;
+int prevHour = -1;
+int prevDay = -1;
 unsigned long lastTickMs = 0;
 bool timeSynced = false;
 
@@ -64,37 +73,6 @@ const char* otaPageHtml = R"rawliteral(
 </body>
 </html>
 )rawliteral";
-
-const char* namaHari(int wday) {
-  switch (wday) {
-    case 0: return "MINGGU";
-    case 1: return "SENIN";
-    case 2: return "SELASA";
-    case 3: return "RABU";
-    case 4: return "KAMIS";
-    case 5: return "JUMAT";
-    case 6: return "SABTU";
-    default: return "---";
-  }
-}
-
-const char* namaBulan(int mon) {
-  switch (mon) {
-    case 0:  return "JAN";
-    case 1:  return "FEB";
-    case 2:  return "MAR";
-    case 3:  return "APR";
-    case 4:  return "MEI";
-    case 5:  return "JUN";
-    case 6:  return "JUL";
-    case 7:  return "AGU";
-    case 8:  return "SEP";
-    case 9:  return "OKT";
-    case 10: return "NOV";
-    case 11: return "DES";
-    default: return "---";
-  }
-}
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
@@ -168,74 +146,118 @@ void setupWebOTA() {
   server.begin();
 }
 
-void drawStaticClockLayout() {
-  tft.fillScreen(COL_BG);
+void drawHand(float angleDeg, int length, uint16_t color, bool thick) {
+  float rad = (angleDeg - 90.0f) * (PI / 180.0f);
+  int x2 = CLK_CX + (int)round(cosf(rad) * length);
+  int y2 = CLK_CY + (int)round(sinf(rad) * length);
 
-  // Header status IP & Web OTA
-  tft.fillRect(0, 0, SCREEN_W, TOP_BAR_H, 0x18E3);
-  tft.setTextSize(1);
-  tft.setCursor(6, 7);
-  if (WiFi.status() == WL_CONNECTED) {
-    tft.setTextColor(ST77XX_CYAN);
-    tft.print(WiFi.localIP());
-  } else {
-    tft.setTextColor(ST77XX_YELLOW);
-    tft.print("Offline / No WiFi");
+  tft.drawLine(CLK_CX, CLK_CY, x2, y2, color);
+  if (thick) {
+    // Geser 1 px tegak lurus agar jarum jam & menit tegas
+    float perp = rad + (PI / 2.0f);
+    int ox = (int)round(cosf(perp));
+    int oy = (int)round(sinf(perp));
+    tft.drawLine(CLK_CX + ox, CLK_CY + oy, x2 + ox, y2 + oy, color);
   }
-
-  // Bingkai utama jam dinding
-  tft.fillRoundRect(8, 32, SCREEN_W - 16, 72, 10, COL_CARD);
-  tft.drawRoundRect(8, 32, SCREEN_W - 16, 72, 10, COL_ACCENT);
-
-  // Label zona waktu di bagian bawah
-  tft.setTextSize(1);
-  tft.setTextColor(COL_ACCENT);
-  tft.setCursor(10, 144);
-  tft.print("JAM DIGITAL WIB");
 }
 
-void updateClockDisplay(const struct tm& timeinfo) {
-  char hmBuf[6];
-  char secBuf[5];
-  char dateBuf[24];
+void drawClockDial() {
+  tft.fillScreen(COL_BG);
 
-  snprintf(hmBuf, sizeof(hmBuf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
-  snprintf(secBuf, sizeof(secBuf), ":%02d", timeinfo.tm_sec);
-  snprintf(dateBuf, sizeof(dateBuf), "%s, %02d %s %04d",
-           namaHari(timeinfo.tm_wday),
-           timeinfo.tm_mday,
-           namaBulan(timeinfo.tm_mon),
-           timeinfo.tm_year + 1900);
-
-  // Update HH:MM hanya saat jam atau menit berubah
-  if (timeinfo.tm_hour != lastHour || timeinfo.tm_min != lastMin) {
-    tft.fillRect(14, 46, 82, 26, COL_CARD);
-    tft.setTextSize(3);
-    tft.setTextColor(COL_TIME);
-    tft.setCursor(15, 48);
-    tft.print(hmBuf);
-    lastHour = timeinfo.tm_hour;
-    lastMin = timeinfo.tm_min;
+  // Header IP minimalis di bagian paling atas
+  tft.setTextSize(1);
+  tft.setTextColor(COL_MUTED);
+  tft.setCursor(6, 4);
+  if (WiFi.status() == WL_CONNECTED) {
+    tft.print(WiFi.localIP());
+  } else {
+    tft.print("OFFLINE");
   }
 
-  // Update :SS tiap detik
-  if (timeinfo.tm_sec != lastSec) {
-    tft.fillRect(94, 54, 22, 16, COL_CARD);
-    tft.setTextSize(1);
-    tft.setTextColor(COL_SEC);
-    tft.setCursor(96, 59);
-    tft.print(secBuf);
-    lastSec = timeinfo.tm_sec;
+  // Badan jam dinding bulat
+  tft.fillCircle(CLK_CX, CLK_CY, CLK_R, COL_FACE);
+  tft.drawCircle(CLK_CX, CLK_CY, CLK_R, COL_RING);
+  tft.drawCircle(CLK_CX, CLK_CY, CLK_R - 1, COL_RING);
+
+  // 12 tanda jam (12, 3, 6, 9 lebih panjang)
+  for (int h = 0; h < 12; h++) {
+    float rad = (h * 30.0f - 90.0f) * (PI / 180.0f);
+    int outerR = CLK_R - 3;
+    int innerR = (h % 3 == 0) ? (CLK_R - 10) : (CLK_R - 7);
+
+    int x1 = CLK_CX + (int)round(cosf(rad) * innerR);
+    int y1 = CLK_CY + (int)round(sinf(rad) * innerR);
+    int x2 = CLK_CX + (int)round(cosf(rad) * outerR);
+    int y2 = CLK_CY + (int)round(sinf(rad) * outerR);
+
+    tft.drawLine(x1, y1, x2, y2, (h % 3 == 0) ? COL_TEXT : COL_TICK);
   }
 
-  // Update tanggal & hari bila berganti hari
-  if (timeinfo.tm_mday != lastDay) {
-    tft.fillRect(8, 114, SCREEN_W - 16, 16, COL_BG);
+  tft.fillCircle(CLK_CX, CLK_CY, 3, COL_TEXT);
+}
+
+void renderHands(int hour12, int minute, int second, bool forceRedraw) {
+  float secAngle  = second * 6.0f;
+  float minAngle  = (minute + second / 60.0f) * 6.0f;
+  float hourAngle = (hour12 + minute / 60.0f) * 30.0f;
+
+  // Hapus jarum detik lama
+  if (prevSec >= 0 && (forceRedraw || second != prevSec)) {
+    drawHand(prevSec * 6.0f, CLK_R - 7, COL_FACE, false);
+  }
+
+  // Jika menit atau jam berubah, hapus & gambar ulang jarum menit & jam
+  if (forceRedraw || minute != prevMin || hour12 != prevHour) {
+    if (prevMin >= 0) {
+      float pMinAng = (prevMin + (prevSec >= 0 ? prevSec : 0) / 60.0f) * 6.0f;
+      drawHand(pMinAng, CLK_R - 12, COL_FACE, true);
+    }
+    if (prevHour >= 0) {
+      float pHrAng = (prevHour + (prevMin >= 0 ? prevMin : 0) / 60.0f) * 30.0f;
+      drawHand(pHrAng, CLK_R - 22, COL_FACE, true);
+    }
+
+    // Gambar ulang tanda jam agar tidak terpotong bekas jarum
+    for (int h = 0; h < 12; h++) {
+      float rad = (h * 30.0f - 90.0f) * (PI / 180.0f);
+      int outerR = CLK_R - 3;
+      int innerR = (h % 3 == 0) ? (CLK_R - 10) : (CLK_R - 7);
+      tft.drawLine(
+        CLK_CX + (int)round(cosf(rad) * innerR),
+        CLK_CY + (int)round(sinf(rad) * innerR),
+        CLK_CX + (int)round(cosf(rad) * outerR),
+        CLK_CY + (int)round(sinf(rad) * outerR),
+        (h % 3 == 0) ? COL_TEXT : COL_TICK
+      );
+    }
+  }
+
+  // Gambar jarum jam, menit, lalu detik yang muter tiap detik
+  drawHand(hourAngle, CLK_R - 22, COL_HOUR_H, true);
+  drawHand(minAngle,  CLK_R - 12, COL_MIN_H,  true);
+  drawHand(secAngle,  CLK_R - 7,  COL_SEC_H,  false);
+
+  // Poros tengah di atas semua jarum
+  tft.fillCircle(CLK_CX, CLK_CY, 3, COL_TEXT);
+  tft.fillCircle(CLK_CX, CLK_CY, 1, COL_SEC_H);
+}
+
+void renderFooter(const struct tm& t) {
+  if (t.tm_mday != prevDay || t.tm_min != prevMin || t.tm_sec != prevSec) {
+    tft.fillRect(0, 132, SCREEN_W, 28, COL_BG);
+
+    char timeStr[16];
+    snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d WIB", t.tm_hour, t.tm_min, t.tm_sec);
     tft.setTextSize(1);
+    tft.setTextColor(COL_TEXT);
+    tft.setCursor(22, 135);
+    tft.print(timeStr);
+
+    char dateStr[20];
+    snprintf(dateStr, sizeof(dateStr), "%02d/%02d/%04d", t.tm_mday, t.tm_mon + 1, t.tm_year + 1900);
     tft.setTextColor(COL_MUTED);
-    tft.setCursor(10, 118);
-    tft.print(dateBuf);
-    lastDay = timeinfo.tm_mday;
+    tft.setCursor(34, 147);
+    tft.print(dateStr);
   }
 }
 
@@ -244,7 +266,6 @@ void setup() {
 
   tft.initR(INITR_BLACKTAB);
   tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
 
   connectWiFi();
   if (WiFi.status() == WL_CONNECTED) {
@@ -252,16 +273,22 @@ void setup() {
     syncNTPTime();
   }
 
-  drawStaticClockLayout();
+  drawClockDial();
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
-    updateClockDisplay(timeinfo);
+    int h12 = timeinfo.tm_hour % 12;
+    renderHands(h12, timeinfo.tm_min, timeinfo.tm_sec, true);
+    renderFooter(timeinfo);
+    prevHour = h12;
+    prevMin = timeinfo.tm_min;
+    prevSec = timeinfo.tm_sec;
+    prevDay = timeinfo.tm_mday;
   } else {
-    tft.setTextSize(2);
+    tft.setTextSize(1);
     tft.setTextColor(ST77XX_YELLOW);
-    tft.setCursor(18, 56);
-    tft.print("SYNC...");
+    tft.setCursor(34, 78);
+    tft.print("SYNC WAKTU...");
   }
 }
 
@@ -280,10 +307,17 @@ void loop() {
 
     struct tm timeinfo;
     if (getLocalTime(&timeinfo)) {
-      updateClockDisplay(timeinfo);
+      int h12 = timeinfo.tm_hour % 12;
+      if (timeinfo.tm_sec != prevSec || timeinfo.tm_min != prevMin || h12 != prevHour) {
+        renderHands(h12, timeinfo.tm_min, timeinfo.tm_sec, false);
+        renderFooter(timeinfo);
+        prevHour = h12;
+        prevMin = timeinfo.tm_min;
+        prevSec = timeinfo.tm_sec;
+        prevDay = timeinfo.tm_mday;
+      }
     }
   }
 
-  // Jeda agar CPU tidak bekerja penuh terus-menerus (lebih adem)
   delay(100);
 }
