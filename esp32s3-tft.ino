@@ -8,6 +8,10 @@
 const char* WIFI_SSID = "Qwerty1";
 const char* WIFI_PASS = "zxcvbnm123";
 
+// Zona waktu Indonesia: WIB = UTC+7 (7 * 3600 detik)
+const long GMT_OFFSET_SEC = 7 * 3600;
+const int  DAYLIGHT_OFFSET_SEC = 0;
+
 #define TFT_CS    13
 #define TFT_RST   9
 #define TFT_DC    10
@@ -19,26 +23,21 @@ WebServer server(80);
 
 const int SCREEN_W = 128;
 const int SCREEN_H = 160;
-const int TOP_BAR_H = 24;
+const int TOP_BAR_H = 22;
 
-// Warna kustom (RGB565) agar wajah robot terlihat menggemaskan
-const uint16_t COL_BG       = 0x0843; // Biru gelap lembut
-const uint16_t COL_FACE     = 0xF79E; // Putih gading hangat
-const uint16_t COL_SHADE    = 0xCE59; // Bayangan abu hangat
-const uint16_t COL_EYE_BG   = ST77XX_WHITE;
-const uint16_t COL_PUPIL    = 0x10A2; // Biru tua pekat
-const uint16_t COL_SPARKLE  = ST77XX_WHITE;
-const uint16_t COL_BLUSH    = 0xF9B2; // Pink pipi menggemaskan
-const uint16_t COL_MOUTH    = 0xA145; // Merah bata hangat
-const uint16_t COL_ANTENNA  = 0xFD20; // Oranye keemasan
+const uint16_t COL_BG      = 0x0843; // Biru gelap lembut
+const uint16_t COL_CARD    = 0x10A5; // Panel jam gelap
+const uint16_t COL_ACCENT  = 0x07FF; // Cyan lembut
+const uint16_t COL_TIME    = ST77XX_WHITE;
+const uint16_t COL_SEC     = 0xFFE0; // Kuning lembut untuk detik
+const uint16_t COL_MUTED   = 0xBDF7; // Abu terang
 
-unsigned long animStartMs = 0;
-unsigned long lastBlinkMs = 0;
-bool isBlinking = false;
-int lastLookX = 999;
-int lastLookY = 999;
-bool lastBlinkState = false;
-bool faceDrawn = false;
+int lastSec = -1;
+int lastMin = -1;
+int lastHour = -1;
+int lastDay = -1;
+unsigned long lastTickMs = 0;
+bool timeSynced = false;
 
 const char* otaPageHtml = R"rawliteral(
 <!DOCTYPE html>
@@ -66,6 +65,37 @@ const char* otaPageHtml = R"rawliteral(
 </html>
 )rawliteral";
 
+const char* namaHari(int wday) {
+  switch (wday) {
+    case 0: return "MINGGU";
+    case 1: return "SENIN";
+    case 2: return "SELASA";
+    case 3: return "RABU";
+    case 4: return "KAMIS";
+    case 5: return "JUMAT";
+    case 6: return "SABTU";
+    default: return "---";
+  }
+}
+
+const char* namaBulan(int mon) {
+  switch (mon) {
+    case 0:  return "JAN";
+    case 1:  return "FEB";
+    case 2:  return "MAR";
+    case 3:  return "APR";
+    case 4:  return "MEI";
+    case 5:  return "JUN";
+    case 6:  return "JUL";
+    case 7:  return "AGU";
+    case 8:  return "SEP";
+    case 9:  return "OKT";
+    case 10: return "NOV";
+    case 11: return "DES";
+    default: return "---";
+  }
+}
+
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -73,6 +103,21 @@ void connectWiFi() {
   unsigned long startAttempt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
     delay(250);
+  }
+}
+
+void syncNTPTime() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org", "time.google.com");
+
+  struct tm timeinfo;
+  unsigned long startSync = millis();
+  while (!getLocalTime(&timeinfo) && millis() - startSync < 8000) {
+    delay(200);
+  }
+  if (getLocalTime(&timeinfo) && timeinfo.tm_year >= (2024 - 1900)) {
+    timeSynced = true;
   }
 }
 
@@ -123,105 +168,75 @@ void setupWebOTA() {
   server.begin();
 }
 
-void drawTopBar() {
+void drawStaticClockLayout() {
+  tft.fillScreen(COL_BG);
+
+  // Header status IP & Web OTA
   tft.fillRect(0, 0, SCREEN_W, TOP_BAR_H, 0x18E3);
-  tft.setTextColor(ST77XX_CYAN);
   tft.setTextSize(1);
-  tft.setCursor(6, 5);
-  tft.print("WEB OTA READY");
-  tft.setCursor(6, 15);
-  tft.setTextColor(ST77XX_WHITE);
+  tft.setCursor(6, 7);
   if (WiFi.status() == WL_CONNECTED) {
+    tft.setTextColor(ST77XX_CYAN);
     tft.print(WiFi.localIP());
   } else {
-    tft.print("No WiFi (Offline)");
+    tft.setTextColor(ST77XX_YELLOW);
+    tft.print("Offline / No WiFi");
   }
+
+  // Bingkai utama jam dinding
+  tft.fillRoundRect(8, 32, SCREEN_W - 16, 72, 10, COL_CARD);
+  tft.drawRoundRect(8, 32, SCREEN_W - 16, 72, 10, COL_ACCENT);
+
+  // Label zona waktu di bagian bawah
+  tft.setTextSize(1);
+  tft.setTextColor(COL_ACCENT);
+  tft.setCursor(10, 144);
+  tft.print("JAM DIGITAL WIB");
 }
 
-void drawRobotStaticBase(int bobOffset) {
-  // Bersihkan area animasi di bawah top bar
-  tft.fillRect(0, TOP_BAR_H, SCREEN_W, SCREEN_H - TOP_BAR_H, COL_BG);
+void updateClockDisplay(const struct tm& timeinfo) {
+  char hmBuf[6];
+  char secBuf[5];
+  char dateBuf[24];
 
-  int headX = 18;
-  int headY = 44 + bobOffset;
-  int headW = 92;
-  int headH = 84;
+  snprintf(hmBuf, sizeof(hmBuf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+  snprintf(secBuf, sizeof(secBuf), ":%02d", timeinfo.tm_sec);
+  snprintf(dateBuf, sizeof(dateBuf), "%s, %02d %s %04d",
+           namaHari(timeinfo.tm_wday),
+           timeinfo.tm_mday,
+           namaBulan(timeinfo.tm_mon),
+           timeinfo.tm_year + 1900);
 
-  // Antena lucu di atas kepala
-  int antX = SCREEN_W / 2;
-  tft.drawLine(antX, headY, antX, headY - 10, COL_FACE);
-  tft.drawLine(antX + 1, headY, antX + 1, headY - 10, COL_FACE);
-  tft.fillCircle(antX, headY - 13, 5, COL_ANTENNA);
-  tft.fillCircle(antX - 1, headY - 14, 2, ST77XX_WHITE);
-
-  // Telinga kecil kiri & kanan
-  tft.fillRoundRect(headX - 6, headY + 28, 7, 22, 3, COL_SHADE);
-  tft.fillRoundRect(headX + headW - 1, headY + 28, 7, 22, 3, COL_SHADE);
-
-  // Bayangan & badan kepala robot membulat
-  tft.fillRoundRect(headX + 2, headY + 3, headW, headH, 18, COL_SHADE);
-  tft.fillRoundRect(headX, headY, headW, headH, 18, COL_FACE);
-  tft.drawRoundRect(headX, headY, headW, headH, 18, COL_PUPIL);
-
-  // Pipi merona (blush) kiri & kanan
-  int blushY = headY + 50;
-  tft.fillCircle(headX + 16, blushY, 7, COL_BLUSH);
-  tft.fillCircle(headX + headW - 16, blushY, 7, COL_BLUSH);
-
-  // Senyum lucu & menggemaskan (lengkungan bawah dengan ujung melengkung ke atas)
-  int mouthCenterX = SCREEN_W / 2;
-  int mouthY = headY + 56;
-  for (int dx = -16; dx <= 16; dx++) {
-    int dy = (dx * dx) / 48; // lengkung U lembut
-    tft.fillCircle(mouthCenterX + dx, mouthY + dy, 2, COL_MOUTH);
-  }
-  // Ujung senyum naik sedikit biar makin manis
-  tft.drawLine(mouthCenterX - 17, mouthY + 5, mouthCenterX - 20, mouthY + 1, COL_MOUTH);
-  tft.drawLine(mouthCenterX + 17, mouthY + 5, mouthCenterX + 20, mouthY + 1, COL_MOUTH);
-}
-
-void drawRobotEyes(int bobOffset, int lookX, int lookY, bool blinking) {
-  int headY = 44 + bobOffset;
-  int leftEyeX = 44;
-  int rightEyeX = 84;
-  int eyeY = headY + 32;
-
-  // Bersihkan area mata saja agar tidak berkedip berlebih
-  tft.fillRoundRect(leftEyeX - 13, eyeY - 13, 26, 26, 8, COL_FACE);
-  tft.fillRoundRect(rightEyeX - 13, eyeY - 13, 26, 26, 8, COL_FACE);
-
-  if (blinking) {
-    // Mata tertutup ramah (^ ^)
-    tft.drawLine(leftEyeX - 8, eyeY + 1, leftEyeX, eyeY - 4, COL_PUPIL);
-    tft.drawLine(leftEyeX, eyeY - 4, leftEyeX + 8, eyeY + 1, COL_PUPIL);
-    tft.drawLine(leftEyeX - 8, eyeY + 2, leftEyeX, eyeY - 3, COL_PUPIL);
-    tft.drawLine(leftEyeX, eyeY - 3, leftEyeX + 8, eyeY + 2, COL_PUPIL);
-
-    tft.drawLine(rightEyeX - 8, eyeY + 1, rightEyeX, eyeY - 4, COL_PUPIL);
-    tft.drawLine(rightEyeX, eyeY - 4, rightEyeX + 8, eyeY + 1, COL_PUPIL);
-    tft.drawLine(rightEyeX - 8, eyeY + 2, rightEyeX, eyeY - 3, COL_PUPIL);
-    tft.drawLine(rightEyeX, eyeY - 3, rightEyeX + 8, eyeY + 2, COL_PUPIL);
-    return;
+  // Update HH:MM hanya saat jam atau menit berubah
+  if (timeinfo.tm_hour != lastHour || timeinfo.tm_min != lastMin) {
+    tft.fillRect(14, 46, 82, 26, COL_CARD);
+    tft.setTextSize(3);
+    tft.setTextColor(COL_TIME);
+    tft.setCursor(15, 48);
+    tft.print(hmBuf);
+    lastHour = timeinfo.tm_hour;
+    lastMin = timeinfo.tm_min;
   }
 
-  // Bola mata putih besar
-  tft.fillCircle(leftEyeX, eyeY, 11, COL_EYE_BG);
-  tft.drawCircle(leftEyeX, eyeY, 11, COL_PUPIL);
-  tft.fillCircle(rightEyeX, eyeY, 11, COL_EYE_BG);
-  tft.drawCircle(rightEyeX, eyeY, 11, COL_PUPIL);
+  // Update :SS tiap detik
+  if (timeinfo.tm_sec != lastSec) {
+    tft.fillRect(94, 54, 22, 16, COL_CARD);
+    tft.setTextSize(1);
+    tft.setTextColor(COL_SEC);
+    tft.setCursor(96, 59);
+    tft.print(secBuf);
+    lastSec = timeinfo.tm_sec;
+  }
 
-  // Pupil melirik halus
-  int pxL = leftEyeX + lookX;
-  int pyL = eyeY + lookY;
-  int pxR = rightEyeX + lookX;
-  int pyR = eyeY + lookY;
-
-  tft.fillCircle(pxL, pyL, 6, COL_PUPIL);
-  tft.fillCircle(pxR, pyR, 6, COL_PUPIL);
-
-  // Kilau mata kecil (sparkle) agar terlihat hidup & lucu
-  tft.fillCircle(pxL - 2, pyL - 2, 2, COL_SPARKLE);
-  tft.fillCircle(pxR - 2, pyR - 2, 2, COL_SPARKLE);
+  // Update tanggal & hari bila berganti hari
+  if (timeinfo.tm_mday != lastDay) {
+    tft.fillRect(8, 114, SCREEN_W - 16, 16, COL_BG);
+    tft.setTextSize(1);
+    tft.setTextColor(COL_MUTED);
+    tft.setCursor(10, 118);
+    tft.print(dateBuf);
+    lastDay = timeinfo.tm_mday;
+  }
 }
 
 void setup() {
@@ -234,16 +249,20 @@ void setup() {
   connectWiFi();
   if (WiFi.status() == WL_CONNECTED) {
     setupWebOTA();
+    syncNTPTime();
   }
 
-  tft.fillScreen(COL_BG);
-  drawTopBar();
+  drawStaticClockLayout();
 
-  animStartMs = millis();
-  lastBlinkMs = millis();
-  drawRobotStaticBase(0);
-  drawRobotEyes(0, 0, 0, false);
-  faceDrawn = true;
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    updateClockDisplay(timeinfo);
+  } else {
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW);
+    tft.setCursor(18, 56);
+    tft.print("SYNC...");
+  }
 }
 
 void loop() {
@@ -252,38 +271,19 @@ void loop() {
   }
 
   unsigned long now = millis();
+  if (now - lastTickMs >= 1000) {
+    lastTickMs = now;
 
-  // Atur jadwal kedipan mata alami
-  if (!isBlinking && (now - lastBlinkMs > 2800)) {
-    isBlinking = true;
-    lastBlinkMs = now;
-  } else if (isBlinking && (now - lastBlinkMs > 160)) {
-    isBlinking = false;
-    lastBlinkMs = now;
+    if (WiFi.status() == WL_CONNECTED && !timeSynced) {
+      syncNTPTime();
+    }
+
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+      updateClockDisplay(timeinfo);
+    }
   }
 
-  // Gerakan mengangguk/mengayun pelan dan arah pandangan mata
-  float t = (now - animStartMs) / 1000.0f;
-  int bobOffset = (int)round(sinf(t * 2.6f) * 3.0f);
-  int lookX = (int)round(sinf(t * 1.4f) * 3.0f);
-  int lookY = (int)round(cosf(t * 1.9f) * 2.0f);
-
-  static int lastBobOffset = 999;
-
-  if (!faceDrawn || bobOffset != lastBobOffset) {
-    drawRobotStaticBase(bobOffset);
-    drawRobotEyes(bobOffset, lookX, lookY, isBlinking);
-    lastBobOffset = bobOffset;
-    lastLookX = lookX;
-    lastLookY = lookY;
-    lastBlinkState = isBlinking;
-    faceDrawn = true;
-  } else if (lookX != lastLookX || lookY != lastLookY || isBlinking != lastBlinkState) {
-    drawRobotEyes(bobOffset, lookX, lookY, isBlinking);
-    lastLookX = lookX;
-    lastLookY = lookY;
-    lastBlinkState = isBlinking;
-  }
-
-  delay(25);
+  // Jeda agar CPU tidak bekerja penuh terus-menerus (lebih adem)
+  delay(100);
 }
