@@ -1,6 +1,11 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+
+const char* WIFI_SSID = "Qwerty";
+const char* WIFI_PASS = "qwerty123";
 
 #define TFT_CS    13
 #define TFT_RST   9
@@ -23,6 +28,45 @@ const int radius = 10;
 int prevX = (int)ballX;
 int prevY = (int)ballY;
 
+void setupWiFiAndOTA() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
+    delay(250);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.setHostname("esp32s3-tft");
+
+    ArduinoOTA.onStart([]() {
+      tft.fillScreen(ST77XX_BLACK);
+      tft.setTextColor(ST77XX_YELLOW);
+      tft.setTextSize(1);
+      tft.setCursor(8, 20);
+      tft.print("OTA UPDATE...");
+    });
+
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      int pct = (progress * 100) / total;
+      tft.fillRect(8, 40, SCREEN_W - 16, 12, ST77XX_BLACK);
+      tft.drawRect(8, 40, SCREEN_W - 16, 12, ST77XX_WHITE);
+      tft.fillRect(10, 42, ((SCREEN_W - 20) * pct) / 100, 8, ST77XX_GREEN);
+    });
+
+    ArduinoOTA.onEnd([]() {
+      tft.fillScreen(ST77XX_BLACK);
+      tft.setTextColor(ST77XX_GREEN);
+      tft.setTextSize(1);
+      tft.setCursor(8, 20);
+      tft.print("OTA DONE! REBOOT...");
+    });
+
+    ArduinoOTA.begin();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -30,14 +74,28 @@ void setup() {
   tft.setRotation(0);
   tft.fillScreen(ST77XX_BLACK);
 
+  setupWiFiAndOTA();
+
+  tft.fillScreen(ST77XX_BLACK);
   tft.fillRect(0, 0, SCREEN_W, TOP_BAR_H, 0x18E3);
   tft.setTextColor(ST77XX_CYAN);
   tft.setTextSize(1);
-  tft.setCursor(8, 8);
-  tft.print("ESP32-S3 TFT TEST");
+  tft.setCursor(8, 6);
+  tft.print("ESP32-S3 OTA READY");
+  tft.setCursor(8, 15);
+  tft.setTextColor(ST77XX_WHITE);
+  if (WiFi.status() == WL_CONNECTED) {
+    tft.print(WiFi.localIP());
+  } else {
+    tft.print("No WiFi (Offline)");
+  }
 }
 
 void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.handle();
+  }
+
   tft.fillCircle(prevX, prevY, radius + 1, ST77XX_BLACK);
 
   ballX += vx;
